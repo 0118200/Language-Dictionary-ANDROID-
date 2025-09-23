@@ -1,8 +1,6 @@
-package com.example.languagedictionary; // SESUAIKAN DENGAN PACKAGE KAMU
+package com.example.languagedictionary;
 
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -15,7 +13,17 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import parser.JsonParser; // IMPORT PARSER KAMU
+import com.example.languagedictionary.model.Definition;
+import com.example.languagedictionary.model.Meaning; // ⚠️ WAJIB DIIMPORT!
+import com.example.languagedictionary.model.Word;
+
+import java.util.List;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -67,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
+                // Do nothing
             }
         });
     }
@@ -83,45 +92,62 @@ public class MainActivity extends AppCompatActivity {
         hideAllResults();
         tvError.setVisibility(View.GONE);
 
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            pbLoading.setVisibility(View.GONE);
+        // ✅ Perbaikan 1: Base URL tanpa spasi
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("https://api.dictionaryapi.dev/api/v2/entries/")
+                .addConverterFactory(GsonConverterFactory.create()) // ✅ Perbaikan 2: .create()
+                .build();
 
-            // ⚡ INTEGRASI DENGAN JSON PARSER KAMU ⚡
-            // Contoh: kita pakai mock JSON "hello" seperti sebelumnya
-            if (word.equalsIgnoreCase("hello") || word.equalsIgnoreCase("halo")) {
+        // ✅ Perbaikan 3: Pastikan DictionaryApi sudah dibuat & di-import
+        DictionaryApi api = retrofit.create(DictionaryApi.class);
 
-                String mockJson = "[{\n" +
-                        "    \"word\": \"hello\",\n" +
-                        "    \"phonetic\": \"həˈləʊ\",\n" +
-                        "    \"origin\": \"early 19th century: variant of earlier hollo ; related to holla.\",\n" +
-                        "    \"meanings\": [\n" +
-                        "      {\n" +
-                        "        \"partOfSpeech\": \"exclamation\",\n" +
-                        "        \"definitions\": [\n" +
-                        "          {\n" +
-                        "            \"definition\": \"used as a greeting or to begin a phone conversation.\",\n" +
-                        "            \"example\": \"hello there, Katie!\",\n" +
-                        "            \"synonyms\": [\"hi\", \"hey\", \"howdy\"],\n" +
-                        "            \"antonyms\": []\n" +
-                        "          }\n" +
-                        "        ]\n" +
-                        "      }\n" +
-                        "    ]\n" +
-                        "}]";
+        Call<List<Word>> call = api.getWordDefinitions(word);
 
-                String hasil = JsonParser.parseFormat(mockJson);
+        call.enqueue(new Callback<List<Word>>() {
+            @Override
+            public void onResponse(Call<List<Word>> call, Response<List<Word>> response) {
+                pbLoading.setVisibility(View.GONE);
 
-                // Tampilkan hasil parsing di TextView
-                tvWord.setText(hasil); // Karena hasilnya panjang, kita tampilkan semua di sini
-                tvWord.setVisibility(View.VISIBLE);
+                if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
+                    Word wordObj = response.body().get(0); // ✅ Nama variabel kecil: wordObj
 
-                // Atau, kalau mau pisah-pisah, kamu bisa modifikasi JsonParser jadi return objek, bukan string.
-                // Tapi untuk sekarang, kita tampilkan full string saja.
+                    StringBuilder result = new StringBuilder();
+                    result.append("Kata: ").append(wordObj.getWord()).append("\n\n");
 
-            } else {
-                showError("Kata \"" + word + "\" tidak ditemukan dalam kamus.");
+                    if (wordObj.getPhonetic() != null) {
+                        result.append("Pelafalan: ").append(wordObj.getPhonetic()).append("\n\n");
+                    }
+
+                    for (Meaning meaning : wordObj.getMeanings()) {
+                        result.append("Jenis Kata: ").append(meaning.getPartOfSpeech()).append("\n");
+
+                        for (Definition def : meaning.getDefinitions()) {
+                            result.append(" • Definisi: ").append(def.getDefinition()).append("\n");
+                            if (def.getExample() != null) {
+                                result.append("   Contoh: ").append(def.getExample()).append("\n");
+                            }
+                            if (def.getSynonyms() != null && !def.getSynonyms().isEmpty()) {
+                                result.append("   Sinonim: ").append(String.join(", ", def.getSynonyms())).append("\n");
+                            }
+                            result.append("\n");
+                        }
+                        result.append("--------------------\n\n");
+                    }
+
+                    tvWord.setText(result.toString());
+                    tvWord.setVisibility(View.VISIBLE);
+
+                } else {
+                    showError("Kata \"" + word + "\" tidak ditemukan.");
+                }
             }
-        }, 2000);
+
+            @Override
+            public void onFailure(Call<List<Word>> call, Throwable t) { // ✅ Perbaikan 4: Call<List<Word>>
+                pbLoading.setVisibility(View.GONE); // ✅ Perbaikan 5: hapus "|"
+                showError("Gagal terhubung ke server: " + t.getMessage());
+            }
+        });
     }
 
     private void showResult(String word, String definition, String synonyms, String example) {
