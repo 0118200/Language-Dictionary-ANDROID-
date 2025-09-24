@@ -1,6 +1,8 @@
 package com.example.languagedictionary;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -13,8 +15,11 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.example.languagedictionary.api.DictionaryApi;
+import com.example.languagedictionary.api.TranslateApi;
 import com.example.languagedictionary.model.Definition;
-import com.example.languagedictionary.model.Meaning; // ⚠️ WAJIB DIIMPORT!
+import com.example.languagedictionary.model.Meaning;
+import com.example.languagedictionary.model.TranslateResponse;
 import com.example.languagedictionary.model.Word;
 
 import java.util.List;
@@ -29,11 +34,12 @@ public class MainActivity extends AppCompatActivity {
 
     private EditText etSearchWord;
     private Button btnSearch;
-    private TextView tvWord, tvDefinition, tvSynonyms, tvExample, tvError;
+    private TextView tvWord, tvError;
     private ProgressBar pbLoading;
     private Spinner spinnerLanguage;
 
-    private String selectedLanguage = "Bahasa Inggris";
+    private String selectedLanguage = "Bahasa Inggris → Indonesia";
+    private Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,7 +48,6 @@ public class MainActivity extends AppCompatActivity {
 
         initViews();
         setupSpinner();
-
         btnSearch.setOnClickListener(v -> handleSearch());
     }
 
@@ -50,9 +55,6 @@ public class MainActivity extends AppCompatActivity {
         etSearchWord = findViewById(R.id.etSearchWord);
         btnSearch = findViewById(R.id.btnSearch);
         tvWord = findViewById(R.id.tvWord);
-        tvDefinition = findViewById(R.id.tvDefinition);
-        tvSynonyms = findViewById(R.id.tvSynonyms);
-        tvExample = findViewById(R.id.tvExample);
         tvError = findViewById(R.id.tvError);
         pbLoading = findViewById(R.id.pbLoading);
         spinnerLanguage = findViewById(R.id.spinnerLanguage);
@@ -74,15 +76,12 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                // Do nothing
-            }
+            public void onNothingSelected(AdapterView<?> parent) {}
         });
     }
 
     private void handleSearch() {
         String word = etSearchWord.getText().toString().trim();
-
         if (word.isEmpty()) {
             Toast.makeText(this, "Masukkan kata terlebih dahulu!", Toast.LENGTH_SHORT).show();
             return;
@@ -92,15 +91,20 @@ public class MainActivity extends AppCompatActivity {
         hideAllResults();
         tvError.setVisibility(View.GONE);
 
-        // ✅ Perbaikan 1: Base URL tanpa spasi
+        if (selectedLanguage.equals("Bahasa Inggris → Indonesia")) {
+            cariDanTerjemahkanLengkap(word);
+        } else if (selectedLanguage.equals("Bahasa Indonesia → Inggris")) {
+            terjemahkanKataLaluCariDefinisi(word);
+        }
+    }
+
+    private void cariDanTerjemahkanLengkap(String word) {
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl("https://api.dictionaryapi.dev/api/v2/entries/")
-                .addConverterFactory(GsonConverterFactory.create()) // ✅ Perbaikan 2: .create()
+                .addConverterFactory(GsonConverterFactory.create())
                 .build();
 
-        // ✅ Perbaikan 3: Pastikan DictionaryApi sudah dibuat & di-import
         DictionaryApi api = retrofit.create(DictionaryApi.class);
-
         Call<List<Word>> call = api.getWordDefinitions(word);
 
         call.enqueue(new Callback<List<Word>>() {
@@ -109,57 +113,174 @@ public class MainActivity extends AppCompatActivity {
                 pbLoading.setVisibility(View.GONE);
 
                 if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
-                    Word wordObj = response.body().get(0); // ✅ Nama variabel kecil: wordObj
-
+                    Word wordObj = response.body().get(0);
                     StringBuilder result = new StringBuilder();
-                    result.append("Kata: ").append(wordObj.getWord()).append("\n\n");
 
-                    if (wordObj.getPhonetic() != null) {
-                        result.append("Pelafalan: ").append(wordObj.getPhonetic()).append("\n\n");
+                    result.append("🔤 Kata: ").append(wordObj.getWord()).append("\n\n");
+
+                    // Pelafalan
+                    if (wordObj.getPhonetic() != null && !wordObj.getPhonetic().trim().isEmpty()) {
+                        terjemahkanDanTambah("🔊 Pelafalan: " + wordObj.getPhonetic(), result, "\n\n");
                     }
 
+                    // Loop meanings
                     for (Meaning meaning : wordObj.getMeanings()) {
-                        result.append("Jenis Kata: ").append(meaning.getPartOfSpeech()).append("\n");
+                        if (meaning.getPartOfSpeech() != null) {
+                            terjemahkanDanTambah("📌 Jenis Kata: " + meaning.getPartOfSpeech(), result, "\n\n");
+                        }
 
                         for (Definition def : meaning.getDefinitions()) {
-                            result.append(" • Definisi: ").append(def.getDefinition()).append("\n");
-                            if (def.getExample() != null) {
-                                result.append("   Contoh: ").append(def.getExample()).append("\n");
+                            terjemahkanDanTambah(" • Definisi: " + def.getDefinition(), result, "\n");
+
+                            if (def.getExample() != null && !def.getExample().trim().isEmpty()) {
+                                terjemahkanDanTambah("   → Contoh: " + def.getExample(), result, "\n");
                             }
+
                             if (def.getSynonyms() != null && !def.getSynonyms().isEmpty()) {
-                                result.append("   Sinonim: ").append(String.join(", ", def.getSynonyms())).append("\n");
+                                String synList = String.join(", ", def.getSynonyms());
+                                terjemahkanDanTambah("   💡 Sinonim: " + synList, result, "\n");
                             }
+
+                            if (def.getAntonyms() != null && !def.getAntonyms().isEmpty()) {
+                                String antList = String.join(", ", def.getAntonyms());
+                                terjemahkanDanTambah("   ❌ Antonim: " + antList, result, "\n");
+                            }
+
                             result.append("\n");
                         }
-                        result.append("--------------------\n\n");
+                        // ❌ HAPUS GARIS PEMISAH INI → TIDAK PERLU
+                        // result.append("────────────────\n\n");
                     }
 
-                    tvWord.setText(result.toString());
-                    tvWord.setVisibility(View.VISIBLE);
+                    mainHandler.postDelayed(() -> {
+                        tampilkanHasil(word, result.toString());
+                    }, 3500);
 
                 } else {
-                    showError("Kata \"" + word + "\" tidak ditemukan.");
+                    // ✅ TAMPILKAN PESAN SEDERHANA — TANPA GARIS KOSONG
+                    String pesan = "🔍 Kata \"" + word + "\" tidak ditemukan di kamus.";
+                    tampilkanHasil(word, pesan);
                 }
             }
 
             @Override
-            public void onFailure(Call<List<Word>> call, Throwable t) { // ✅ Perbaikan 4: Call<List<Word>>
-                pbLoading.setVisibility(View.GONE); // ✅ Perbaikan 5: hapus "|"
-                showError("Gagal terhubung ke server: " + t.getMessage());
+            public void onFailure(Call<List<Word>> call, Throwable t) {
+                pbLoading.setVisibility(View.GONE);
+                String pesan = "⚠️ Gagal terhubung ke server.";
+                tampilkanHasil(word, pesan);
             }
         });
     }
 
-    private void showResult(String word, String definition, String synonyms, String example) {
-        tvWord.setText("Kata: " + word);
-        tvDefinition.setText("Definisi: " + definition);
-        tvSynonyms.setText("Sinonim: " + synonyms);
-        tvExample.setText("Contoh: " + example);
+    private void terjemahkanDanTambah(String text, StringBuilder sb, String suffix) {
+        terjemahkanTeks(text, "en|id", translated -> {
+            mainHandler.post(() -> {
+                if (translated == null || translated.trim().isEmpty() ||
+                        translated.contains("Gagal") || translated.equals(text)) {
+                    sb.append(text).append(suffix);
+                } else {
+                    sb.append(translated).append(suffix);
+                }
+            });
+        });
+    }
 
+    private void terjemahkanKataLaluCariDefinisi(String word) {
+        terjemahkanTeks(word, "id|en", kataInggris -> {
+            if (kataInggris == null || kataInggris.contains("Gagal") || kataInggris.trim().isEmpty()) {
+                pbLoading.setVisibility(View.GONE);
+                showError("Tidak bisa menerjemahkan kata ini.");
+                return;
+            }
+
+            Retrofit retrofit = new Retrofit.Builder()
+                    .baseUrl("https://api.dictionaryapi.dev/api/v2/entries/")
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build();
+
+            DictionaryApi api = retrofit.create(DictionaryApi.class);
+            Call<List<Word>> call = api.getWordDefinitions(kataInggris);
+
+            call.enqueue(new Callback<List<Word>>() {
+                @Override
+                public void onResponse(Call<List<Word>> call, Response<List<Word>> response) {
+                    pbLoading.setVisibility(View.GONE);
+
+                    if (response.isSuccessful() && response.body() != null && !response.body().isEmpty()) {
+                        Word wordObj = response.body().get(0);
+                        StringBuilder result = new StringBuilder();
+
+                        result.append("🔤 Kata: ").append(word).append(" (").append(kataInggris).append(")\n\n");
+
+                        if (wordObj.getPhonetic() != null) {
+                            result.append("🔊 Pelafalan: ").append(wordObj.getPhonetic()).append("\n\n");
+                        }
+
+                        for (Meaning meaning : wordObj.getMeanings()) {
+                            result.append("📌 Jenis Kata: ").append(meaning.getPartOfSpeech()).append("\n\n");
+                            for (Definition def : meaning.getDefinitions()) {
+                                result.append(" • Definisi: ").append(def.getDefinition()).append("\n");
+                                if (def.getExample() != null) {
+                                    result.append("   → Contoh: ").append(def.getExample()).append("\n");
+                                }
+                                if (def.getSynonyms() != null && !def.getSynonyms().isEmpty()) {
+                                    result.append("   💡 Sinonim: ").append(String.join(", ", def.getSynonyms())).append("\n");
+                                }
+                                if (def.getAntonyms() != null && !def.getAntonyms().isEmpty()) {
+                                    result.append("   ❌ Antonim: ").append(String.join(", ", def.getAntonyms())).append("\n");
+                                }
+                                result.append("\n");
+                            }
+                            result.append("────────────────\n\n");
+                        }
+
+                        tampilkanHasil(word, result.toString());
+
+                    } else {
+                        showError("Kata \"" + kataInggris + "\" tidak ditemukan di kamus Inggris.");
+                    }
+                }
+
+                @Override
+                public void onFailure(Call<List<Word>> call, Throwable t) {
+                    pbLoading.setVisibility(View.GONE);
+                    showError("Gagal terhubung ke server: " + t.getMessage());
+                }
+            });
+        });
+    }
+
+    private void terjemahkanTeks(String text, String langPair, TranslationCallback callback) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("https://api.mymemory.translated.net/")
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        TranslateApi api = retrofit.create(TranslateApi.class);
+        Call<TranslateResponse> call = api.translate(text, langPair);
+
+        call.enqueue(new Callback<TranslateResponse>() {
+            @Override
+            public void onResponse(Call<TranslateResponse> call, Response<TranslateResponse> response) {
+                if (response.isSuccessful() && response.body() != null &&
+                        response.body().getResponseData() != null) {
+                    String translated = response.body().getResponseData().getTranslatedText();
+                    callback.onSuccess(translated);
+                } else {
+                    callback.onSuccess(text + " (terjemahan gagal)");
+                }
+            }
+
+            @Override
+            public void onFailure(Call<TranslateResponse> call, Throwable t) {
+                callback.onSuccess(text + " (error jaringan)");
+            }
+        });
+    }
+
+    private void tampilkanHasil(String word, String hasil) {
+        tvWord.setText(hasil);
         tvWord.setVisibility(View.VISIBLE);
-        tvDefinition.setVisibility(View.VISIBLE);
-        tvSynonyms.setVisibility(View.VISIBLE);
-        tvExample.setVisibility(View.VISIBLE);
     }
 
     private void showError(String message) {
@@ -169,9 +290,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void hideAllResults() {
         tvWord.setVisibility(View.GONE);
-        tvDefinition.setVisibility(View.GONE);
-        tvSynonyms.setVisibility(View.GONE);
-        tvExample.setVisibility(View.GONE);
         tvError.setVisibility(View.GONE);
+    }
+
+    interface TranslationCallback {
+        void onSuccess(String translatedText);
     }
 }
