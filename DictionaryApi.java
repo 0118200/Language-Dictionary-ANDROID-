@@ -1,4 +1,4 @@
-package com.example.languagedictionary;
+package com.example.languagedictionary.api;
 
 import com.example.languagedictionary.model.Word;
 import java.util.List;
