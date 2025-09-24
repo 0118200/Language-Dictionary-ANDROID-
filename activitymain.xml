@@ -34,42 +34,26 @@
         android:layout_marginTop="16dp"
         android:visibility="gone" />
 
-    <TextView
-        android:id="@+id/tvWord"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:layout_marginTop="16dp"
-        android:visibility="gone" />
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="16dp">
 
-    <TextView
-        android:id="@+id/tvDefinition"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:visibility="gone" />
+        <TextView
+            android:id="@+id/tvWord"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="16sp"
+            android:visibility="gone" />
 
-    <TextView
-        android:id="@+id/tvSynonyms"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:visibility="gone" />
-
-    <TextView
-        android:id="@+id/tvExample"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:visibility="gone" />
+    </ScrollView>
 
     <TextView
         android:id="@+id/tvError"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="#FF0000"
-        android:layout_marginTop="16dp"
         android:visibility="gone" />
 
 </LinearLayout>
