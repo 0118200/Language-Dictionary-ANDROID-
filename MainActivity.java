@@ -3,6 +3,7 @@ package com.example.languagedictionary;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.TextToSpeech;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -22,6 +23,7 @@ import com.example.languagedictionary.model.Meaning;
 import com.example.languagedictionary.model.TranslateResponse;
 import com.example.languagedictionary.model.Word;
 
+import java.util.Locale;
 import java.util.List;
 
 import retrofit2.Call;
@@ -33,14 +35,14 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class MainActivity extends AppCompatActivity {
 
     private EditText etSearchWord;
-    private Button btnSearch;
+    private Button btnSearch, btnSpeak;
     private TextView tvWord, tvError;
     private ProgressBar pbLoading;
     private Spinner spinnerLanguage;
 
     private String selectedLanguage = "Bahasa Inggris → Indonesia";
     private Handler mainHandler = new Handler(Looper.getMainLooper());
-
+    private TextToSpeech textToSpeech;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -49,6 +51,32 @@ public class MainActivity extends AppCompatActivity {
         initViews();
         setupSpinner();
         btnSearch.setOnClickListener(v -> handleSearch());
+        btnSpeak = findViewById(R.id.btnSpeak);
+        btnSpeak.setOnClickListener(v -> ucapkanKata(etSearchWord.getText().toString().trim()));
+        textToSpeech = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if (status == TextToSpeech.SUCCESS) {
+                    //default bhs inggris
+                    int result = textToSpeech.setLanguage(Locale.ENGLISH);
+                    if (result == TextToSpeech.LANG_MISSING_DATA
+                            || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Toast.makeText(MainActivity.this, "Bahasa tidak didukung", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    Toast.makeText(MainActivity.this, "Gagal inisialisasi TTS", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
+        super.onDestroy();
     }
 
     private void initViews() {
@@ -87,6 +115,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        btnSpeak.setVisibility(View.VISIBLE);
         pbLoading.setVisibility(View.VISIBLE);
         hideAllResults();
         tvError.setVisibility(View.GONE);
@@ -116,14 +145,17 @@ public class MainActivity extends AppCompatActivity {
                     Word wordObj = response.body().get(0);
                     StringBuilder result = new StringBuilder();
 
+                    // Di dalam onResponse Dictionary API
+                    if (wordObj.getPhonetic() != null && !wordObj.getPhonetic().isEmpty()) {
+                        ucapkanKata(wordObj.getWord()); // ucapkan kata asli, bukan phonetic
+                    }
+
                     result.append("🔤 Kata: ").append(wordObj.getWord()).append("\n\n");
 
-                    // Pelafalan
                     if (wordObj.getPhonetic() != null && !wordObj.getPhonetic().trim().isEmpty()) {
                         terjemahkanDanTambah("🔊 Pelafalan: " + wordObj.getPhonetic(), result, "\n\n");
                     }
 
-                    // Loop meanings
                     for (Meaning meaning : wordObj.getMeanings()) {
                         if (meaning.getPartOfSpeech() != null) {
                             terjemahkanDanTambah("📌 Jenis Kata: " + meaning.getPartOfSpeech(), result, "\n\n");
@@ -148,8 +180,6 @@ public class MainActivity extends AppCompatActivity {
 
                             result.append("\n");
                         }
-                        // ❌ HAPUS GARIS PEMISAH INI → TIDAK PERLU
-                        // result.append("────────────────\n\n");
                     }
 
                     mainHandler.postDelayed(() -> {
@@ -157,7 +187,6 @@ public class MainActivity extends AppCompatActivity {
                     }, 3500);
 
                 } else {
-                    // ✅ TAMPILKAN PESAN SEDERHANA — TANPA GARIS KOSONG
                     String pesan = "🔍 Kata \"" + word + "\" tidak ditemukan di kamus.";
                     tampilkanHasil(word, pesan);
                 }
@@ -185,6 +214,13 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void ucapkanKata(String word) {
+        if (word.isEmpty()) return;
+
+        if (textToSpeech != null) {
+            textToSpeech.speak(word, TextToSpeech.QUEUE_FLUSH, null, null);
+        }
+    }
     private void terjemahkanKataLaluCariDefinisi(String word) {
         terjemahkanTeks(word, "id|en", kataInggris -> {
             if (kataInggris == null || kataInggris.contains("Gagal") || kataInggris.trim().isEmpty()) {
